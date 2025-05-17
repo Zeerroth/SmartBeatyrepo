@@ -1,0 +1,7 @@
+__pycache__/
+api_key.env
+*.pyc
+tempCodeRunnerFile.py
+embeddings_cache.json
+product_cache.json
+conversation_*.json
