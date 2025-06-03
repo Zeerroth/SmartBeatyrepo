@@ -1,0 +1,10 @@
+# SmartBeauty AI Chatbot UI Backend Requirements
+Flask==2.3.3
+Flask-CORS==4.0.0
+python-dotenv==1.0.0
+
+# Core dependencies (should already be available from main requirements.txt)
+# psycopg2-binary==2.9.7
+# openai==0.28.1
+# langchain==0.0.348
+# tiktoken==0.5.1
