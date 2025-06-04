@@ -26,7 +26,7 @@ from langchain_openai import ChatOpenAI
 # Import our modular components
 import config
 from data_loader import load_skin_condition_profiles
-from vector_store import PGVectorStoreManager
+from langchain_community.vectorstores.pgvector import PGVector
 from rag_chain import get_rag_chain
 from utils import setup_environment, test_db_connection
 
@@ -44,29 +44,28 @@ def load_vector_store(embeddings_model, collection_name: str):
     """Load an existing vector store from the database."""
     print(f"\n=== Loading Vector Store: {collection_name} ===")
     
-    # Test database connection and table existence
-    if not test_db_connection(config.DATABASE_CONNECTION_STRING, collection_name):
-        print(f"Failed to connect to database or table '{collection_name}' doesn't exist.")
+    # Test database connection
+    if not test_db_connection(config.DATABASE_CONNECTION_STRING):
+        print(f"Failed to connect to database.")
         return None
     
     try:
-        vector_store_manager = PGVectorStoreManager(
-            embedding_model=embeddings_model,
+        # Connect directly to the existing LangChain vector store
+        # (embeddings should already exist from create_embeddings.py)
+        vector_store = PGVector(
+            embedding_function=embeddings_model,
             connection_string=config.DATABASE_CONNECTION_STRING,
             collection_name=collection_name
         )
         
-        # Load existing store (no documents to add, no rebuild)
-        vector_store = vector_store_manager.build_or_load_store(
-            documents=None, 
-            pre_delete_collection=False
-        )
-        
-        print(f"✓ Successfully loaded vector store: {collection_name}")
+        # Test the connection with a sample search
+        test_results = vector_store.similarity_search("test", k=1)
+        print(f"✓ Successfully loaded vector store: {collection_name} ({len(test_results)} test results)")
         return vector_store
         
     except Exception as e:
         print(f"✗ Error loading vector store '{collection_name}': {e}")
+        print("Make sure embeddings have been created using create_embeddings.py")
         return None
 
 def setup_rag_chain(vector_store):

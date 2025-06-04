@@ -20,15 +20,14 @@ import os
 import sys
 import json
 import psycopg2
-from psycopg2.extras import Json
 
 # Add the parent directory to sys.path to import local modules
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, parent_dir)
 
 # Import local modules
 import rag.core.config as config
-from document_processor import create_embedding_text_from_features
+from rag.core.document_processor import create_embedding_text_from_features
 
 def create_products_table(conn):
     """
@@ -38,19 +37,12 @@ def create_products_table(conn):
         conn: PostgreSQL connection object
     """
     with conn.cursor() as cursor:
-        # Check if the pgvector extension is installed
-        cursor.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-        if not cursor.fetchone():
-            print("Warning: pgvector extension is not installed. Installing now...")
-            cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            print("pgvector extension installed.")        # Create the products table if it doesn't exist
+        # Create the simplified products table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
-            original_product_data JSONB,
-            embedding_text_concatenated TEXT,
-            embedding_vector vector(768)
+            description TEXT
         );
         """)
         conn.commit()
@@ -113,18 +105,17 @@ def insert_product(cursor, product):
     product_id = product.get("id")
     name = product.get("name", "")
     
-    # Generate embedding text
+    # Generate embedding text using the document processor
     embedding_text = generate_embedding_text(product)
     
-    # Insert the product with all fields
+    # Insert the product with simplified structure
     cursor.execute("""
-    INSERT INTO products (id, name, original_product_data, embedding_text_concatenated)
-    VALUES (%s, %s, %s, %s)
+    INSERT INTO products (id, name, description)
+    VALUES (%s, %s, %s)
     ON CONFLICT (id) DO UPDATE 
     SET name = EXCLUDED.name,
-        original_product_data = EXCLUDED.original_product_data,
-        embedding_text_concatenated = EXCLUDED.embedding_text_concatenated;
-    """, (product_id, name, Json(product), embedding_text))
+        description = EXCLUDED.description;
+    """, (product_id, name, embedding_text))
 
 def populate_products_table(conn, products):
     """
@@ -169,8 +160,12 @@ def count_products_in_table(conn):
 
 def main():
     """Main function to populate the products table."""
+    # Construct the correct path to product_cache.json (in core directory)
+    script_dir = os.path.dirname(__file__)
+    product_file_path = os.path.join(script_dir, "..", "core", "product_cache.json")
+    
     # Load products from JSON
-    products = load_products_from_json(config.PRODUCT_JSON_FILEPATH)
+    products = load_products_from_json(product_file_path)
     if not products:
         print("No products to insert. Exiting.")
         return

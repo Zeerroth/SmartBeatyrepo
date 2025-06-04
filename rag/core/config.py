@@ -9,19 +9,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # --- Data Source Configuration ---
 DATA_SOURCE_TYPE = "JSON"
-PRODUCT_JSON_FILEPATH = "../../product_cache.json"
+PRODUCT_JSON_FILEPATH = "product_cache.json"
 CLASS_DESCRIPTIONS_MODULE = "class_descriptions"
 
 # --- PGVector and Database Configuration ---
 DATABASE_CONNECTION_STRING = os.getenv("DATABASE_URL")
 PRODUCTS_COLLECTION_NAME = "products"  # Table name for productse
-CLASS_DESCRIPTIONS_COLLECTION_NAME = "class_descriptions_vector"
+CLASS_DESCRIPTIONS_COLLECTION_NAME = "skin_conditions"
 
 # --- Embedding Model Configuration ---
 SENTENCE_TRANSFORMER_MODEL_NAME = "all-mpnet-base-v2"
 
 # --- LLM Configuration ---
-LLM_MODEL_NAME = "gpt-4"  # or "gpt-3.5-turbo" etc.
+LLM_MODEL_NAME = "gpt-3.5-turbo"  # or "gpt-3.5-turbo" etc.
 
 # --- Product Features for Embedding Text ---
 PRODUCT_FEATURES_FOR_EMBEDDING = [

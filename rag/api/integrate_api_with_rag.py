@@ -85,9 +85,9 @@ class APIRetriever:
         return documents
 
 def setup_langchain_retrieval():
-    """Set up LangChain retrieval using the Vector Store."""
+    """Set up LangChain retrieval using the Custom Vector Store."""
     from langchain_community.embeddings import HuggingFaceEmbeddings
-    from vector_store import PGVectorStoreManager
+    from langchain_community.vectorstores.pgvector import PGVector
     
     print("Setting up LangChain retrieval...")
     
@@ -97,21 +97,29 @@ def setup_langchain_retrieval():
         model_kwargs={'device': 'cpu'}
     )
     
-    # Initialize vector store manager
-    vector_store_manager = PGVectorStoreManager(
-        embedding_model=embedding_model,
-        connection_string=config.DATABASE_CONNECTION_STRING,
-        collection_name="products"
-    )
-    
-    # Connect to the vector store
-    vector_store = vector_store_manager.build_or_load_store()
-    
-    # Create retriever
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-    
-    print("LangChain retrieval setup complete.")
-    return retriever
+    # Connect directly to the products vector store
+    # (embeddings should already exist from create_embeddings.py)
+    try:
+        vector_store = PGVector(
+            embedding_function=embedding_model,
+            connection_string=config.DATABASE_CONNECTION_STRING,
+            collection_name="products"
+        )
+        
+        # Test the connection
+        test_results = vector_store.similarity_search("test", k=1)
+        print(f"✓ Connected to products vector store with embeddings")
+        
+        # Create retriever
+        retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+        
+        print("LangChain retrieval setup complete.")
+        return retriever
+        
+    except Exception as e:
+        print(f"❌ Error setting up vector store: {e}")
+        print("Make sure embeddings have been created using create_embeddings.py")
+        return None
 
 def setup_api_retrieval():
     """Set up API-based retrieval."""

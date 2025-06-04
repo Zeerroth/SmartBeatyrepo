@@ -23,9 +23,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Import our modular components
 import config
-from data_loader import load_raw_product_data, load_skin_condition_profiles
-from document_processor import prepare_product_documents, prepare_skin_condition_documents
-from vector_store import PGVectorStoreManager
+from custom_vector_store import CustomDatabaseVectorManager
 from utils import setup_environment, test_db_connection
 
 load_dotenv()
@@ -39,103 +37,43 @@ def create_embeddings_model():
     )
 
 def process_products(embeddings_model, rebuild: bool = False):
-    """Process product data and store in vector database."""
-    print("\n=== Processing Product Data ===")
-    
-    # Check if collection name is set
-    if not config.PRODUCTS_COLLECTION_NAME:
-        print("Error: PRODUCTS_COLLECTION_NAME is not set in config.py")
-        return None
-    
-    print(f"Using collection name: {config.PRODUCTS_COLLECTION_NAME}")
-    
+    """Process product data from database and store embeddings."""
     # Test database connection
     if not test_db_connection(config.DATABASE_CONNECTION_STRING):
         print("Failed to connect to database. Please check your connection settings.")
         return None
     
-    # Load raw product data
-    raw_products = load_raw_product_data(
-        config.DATA_SOURCE_TYPE, 
-        filepath=config.PRODUCT_JSON_FILEPATH
-    )
-    
-    if not raw_products:
-        print("No product data found. Skipping product processing.")
-        return None
-    
-    # Process into LangChain documents
-    product_documents = prepare_product_documents(
-        raw_products,
-        config.PRODUCT_FEATURES_FOR_EMBEDDING,
-        config.FEATURE_LABELS
-    )
-    
-    if not product_documents:
-        print("Failed to prepare product documents. Skipping vector store creation.")
-        return None
-    
-    # Store in vector database
+    # Use custom vector store manager
     try:
-        vector_store_manager = PGVectorStoreManager(
+        vector_manager = CustomDatabaseVectorManager(
             embedding_model=embeddings_model,
-            connection_string=config.DATABASE_CONNECTION_STRING,
-            collection_name=config.PRODUCTS_COLLECTION_NAME
+            connection_string=config.DATABASE_CONNECTION_STRING
         )
         
-        vector_store = vector_store_manager.build_or_load_store(
-            documents=product_documents, 
-            pre_delete_collection=rebuild
-        )
-        
-        print(f"Successfully processed {len(product_documents)} product documents")
-        return vector_store
+        return vector_manager.process_products(rebuild=rebuild)
         
     except Exception as e:
-        print(f"Error creating product vector store: {e}")
+        print(f"Error processing products: {e}")
         return None
 
 def process_skin_conditions(embeddings_model, rebuild: bool = False):
-    """Process skin condition data and store in vector database."""
-    print("\n=== Processing Skin Condition Data ===")
-    
+    """Process skin condition data from database and store embeddings."""
     # Test database connection
     if not test_db_connection(config.DATABASE_CONNECTION_STRING):
         print("Failed to connect to database. Please check your connection settings.")
         return None
     
-    # Load skin condition profiles
-    skin_conditions = load_skin_condition_profiles(config.CLASS_DESCRIPTIONS_MODULE)
-    
-    if not skin_conditions:
-        print("No skin condition data found. Skipping skin condition processing.")
-        return None
-    
-    # Process into LangChain documents
-    condition_documents = prepare_skin_condition_documents(skin_conditions)
-    
-    if not condition_documents:
-        print("Failed to prepare skin condition documents. Skipping vector store creation.")
-        return None
-    
-    # Store in vector database
+    # Use custom vector store manager
     try:
-        vector_store_manager = PGVectorStoreManager(
+        vector_manager = CustomDatabaseVectorManager(
             embedding_model=embeddings_model,
-            connection_string=config.DATABASE_CONNECTION_STRING,
-            collection_name=config.CLASS_DESCRIPTIONS_COLLECTION_NAME
+            connection_string=config.DATABASE_CONNECTION_STRING
         )
         
-        vector_store = vector_store_manager.build_or_load_store(
-            documents=condition_documents, 
-            pre_delete_collection=rebuild
-        )
-        
-        print(f"Successfully processed {len(condition_documents)} skin condition documents")
-        return vector_store
+        return vector_manager.process_skin_conditions(rebuild=rebuild)
         
     except Exception as e:
-        print(f"Error creating skin condition vector store: {e}")
+        print(f"Error processing skin conditions: {e}")
         return None
 
 def main():
@@ -196,8 +134,7 @@ def main():
             print("✓ Skin condition embeddings created successfully!")
         else:
             print("✗ Failed to create skin condition embeddings.")
-    
-    # Summary
+      # Summary
     total_tasks = (1 if args.products_only else 0) + (1 if args.conditions_only else 0)
     if process_all:
         total_tasks = 2
@@ -206,6 +143,22 @@ def main():
     print(f"EMBEDDING CREATION SUMMARY")
     print(f"{'='*50}")
     print(f"Tasks completed successfully: {success_count}/{total_tasks}")
+    
+    # Show embedding statistics
+    if success_count > 0:
+        try:
+            vector_manager = CustomDatabaseVectorManager(
+                embedding_model=embedding_model,
+                connection_string=config.DATABASE_CONNECTION_STRING
+            )
+            stats = vector_manager.get_embedding_stats()
+            
+            print(f"\nCurrent Embedding Statistics:")
+            for collection_name, count in stats.items():
+                print(f"  📊 {collection_name}: {count} embeddings")
+                
+        except Exception as e:
+            print(f"Could not retrieve embedding statistics: {e}")
     
     if success_count == total_tasks:
         print("🎉 All embedding creation tasks completed successfully!")

@@ -19,7 +19,7 @@ import sys
 import psycopg2
 
 # Add the parent directory to sys.path to import local modules
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, parent_dir)
 
 # Import local modules
@@ -34,20 +34,12 @@ def create_skin_conditions_table(conn):
         conn: PostgreSQL connection object
     """
     with conn.cursor() as cursor:
-        # Check if the pgvector extension is installed
-        cursor.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-        if not cursor.fetchone():
-            print("Warning: pgvector extension is not installed. Installing now...")
-            cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            print("pgvector extension installed.")
-            
-        # Create the skin_conditions table if it doesn't exist
+        # Create the simplified skin_conditions table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS skin_conditions (
             id SERIAL PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
-            description TEXT NOT NULL,
-            embedding_vector vector(768)
+            description TEXT NOT NULL
         );
         """)
         conn.commit()
