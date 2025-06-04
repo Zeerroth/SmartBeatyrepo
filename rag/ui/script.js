@@ -114,14 +114,13 @@ class SmartBeautyChatbot {
 
             // Add bot response
             this.addBotMessage(response);
-
         } catch (error) {
             console.error('Error sending message:', error);
             this.hideTypingIndicator();
 
             // Add error message
             this.addMessage(
-                "I'm sorry, I'm having trouble connecting right now. Please try again later.",
+                "I'm sorry, I'm experiencing technical difficulties. Please check that the backend server is running and try again.",
                 'bot',
                 { isError: true }
             );
@@ -152,76 +151,10 @@ class SmartBeautyChatbot {
             }
 
             return data;
-
         } catch (error) {
             console.error('Backend API error:', error);
-
-            // Fallback to mock response if API fails
-            return this.getMockResponse(message);
+            throw error; // Let the calling function handle the error
         }
-    }
-
-    getMockResponse(message) {
-        // Fallback mock responses when API is unavailable
-        const mockResponses = {
-            'oily': {
-                answer: "For oily skin, I recommend using a gentle foaming cleanser with salicylic acid, followed by a lightweight, oil-free moisturizer. Look for products containing niacinamide, which helps regulate oil production. The Ordinary Niacinamide 10% + Zinc 1% is excellent for controlling excess sebum.",
-                sources: [
-                    { content: "Salicylic acid helps unclog pores and reduce oil production", similarity: 0.89 },
-                    { content: "Niacinamide regulates sebum production and minimizes pores", similarity: 0.87 }
-                ],
-                tokens: { prompt: 45, completion: 78 }
-            },
-            'sensitive': {
-                answer: "For sensitive skin that gets red easily, focus on gentle, fragrance-free products. Look for ingredients like ceramides, hyaluronic acid, and colloidal oatmeal. Avoid products with alcohol, strong fragrances, or harsh acids. CeraVe Gentle Foaming Cleanser and their PM Facial Moisturizing Lotion are great options.",
-                sources: [
-                    { content: "Ceramides help restore and maintain the skin barrier", similarity: 0.92 },
-                    { content: "Fragrance-free formulas reduce irritation risk", similarity: 0.85 }
-                ],
-                tokens: { prompt: 52, completion: 89 }
-            },
-            'aging': {
-                answer: "For anti-aging and wrinkle prevention, incorporate retinoids, vitamin C, and peptides into your routine. Start with a gentle retinol like Neutrogena Rapid Wrinkle Repair, use vitamin C serum in the morning, and always apply SPF 30+ sunscreen. Hyaluronic acid helps plump fine lines.",
-                sources: [
-                    { content: "Retinoids boost collagen production and reduce fine lines", similarity: 0.94 },
-                    { content: "Vitamin C protects against environmental damage", similarity: 0.88 }
-                ],
-                tokens: { prompt: 38, completion: 95 }
-            },
-            'dry': {
-                answer: "For very dry skin, use a cream-based cleanser and rich moisturizers with ceramides, glycerin, and hyaluronic acid. Apply moisturizer to damp skin to lock in hydration. Consider adding a facial oil like argan or jojoba oil. Avoid hot water and harsh cleansers that strip natural oils.",
-                sources: [
-                    { content: "Ceramides and glycerin provide long-lasting hydration", similarity: 0.91 },
-                    { content: "Applying moisturizer to damp skin increases effectiveness", similarity: 0.86 }
-                ],
-                tokens: { prompt: 41, completion: 82 }
-            }
-        };
-
-        // Simple keyword matching for fallback
-        const lowerMessage = message.toLowerCase();
-        let response;
-
-        if (lowerMessage.includes('oily')) {
-            response = mockResponses.oily;
-        } else if (lowerMessage.includes('sensitive') || lowerMessage.includes('red')) {
-            response = mockResponses.sensitive;
-        } else if (lowerMessage.includes('aging') || lowerMessage.includes('wrinkle')) {
-            response = mockResponses.aging;
-        } else if (lowerMessage.includes('dry')) {
-            response = mockResponses.dry;
-        } else {
-            // Default response
-            response = {
-                answer: "I'm sorry, I'm having trouble connecting to the AI service right now. Please try again later or contact support if the problem persists.",
-                sources: [],
-                tokens: { prompt: 25, completion: 45 }
-            };
-        }
-
-        response.using_rag = false;
-        response.timestamp = new Date().toISOString();
-        return response;
     }
 
     addMessage(text, sender, options = {}) {
@@ -304,14 +237,34 @@ class SmartBeautyChatbot {
             });
 
             textDiv.appendChild(sourcesDiv);
-        }
-
-        // Add token information if available
+        }        // Add token information if available
         if (response.tokens) {
             const tokenInfo = document.createElement('div');
             tokenInfo.className = 'token-info';
-            tokenInfo.textContent = `Tokens: ${response.tokens.prompt} prompt + ${response.tokens.completion} completion`;
+            if (response.tokens.total_tokens) {
+                // New format with input/output/total tokens
+                tokenInfo.textContent = `Tokens: ${response.tokens.total_tokens} total (${response.tokens.input_tokens} input + ${response.tokens.output_tokens} output)`;
+            } else {
+                // Fallback to old format
+                tokenInfo.textContent = `Tokens: ${response.tokens.prompt || 0} prompt + ${response.tokens.completion || 0} completion`;
+            }
             textDiv.appendChild(tokenInfo);
+        }
+
+        // Add memory indicator if available
+        if (response.using_memory !== undefined) {
+            const memoryInfo = document.createElement('div');
+            memoryInfo.className = 'memory-info';
+            memoryInfo.textContent = response.using_memory ? '🧠 Using conversation memory' : '📝 Single query (no memory)';
+            textDiv.appendChild(memoryInfo);
+        }
+
+        // Add conversation turn info if available
+        if (response.conversation_turn) {
+            const turnInfo = document.createElement('div');
+            turnInfo.className = 'turn-info';
+            turnInfo.textContent = `Turn: ${response.conversation_turn}`;
+            textDiv.appendChild(turnInfo);
         }
 
         const timeDiv = document.createElement('div');

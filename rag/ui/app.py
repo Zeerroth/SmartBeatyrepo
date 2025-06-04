@@ -1,236 +1,380 @@
+#!/usr/bin/env python
 """
-SmartBeauty AI Chatbot Backend API
-Connects the chatbot UI to the RAG inference system
+Flask backend for SmartBeauty AI Chatbot UI.
+
+This Flask server provides a web interface for the conversational RAG system,
+allowing users to interact with the SmartBeauty skincare advisor through a 
+modern chat interface.
+
+Usage:
+    python app.py
+    
+API Endpoints:
+    GET /                   - Serves the chatbot UI
+    POST /api/chat         - Handles chat messages
+    GET /api/health        - Health check endpoint
+    POST /api/reset        - Reset conversation
 """
 
 import os
 import sys
 import json
-import time
-import traceback
+import logging
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from typing import Dict, Any, Optional
+
+# Flask imports
+from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
-import subprocess
-import tempfile
+from dotenv import load_dotenv
 
-# Add the core directory to Python path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'core'))
+# Add the core directory to sys.path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+core_dir = os.path.join(current_dir, '..', 'core')
+core_dir = os.path.abspath(core_dir)
 
-# Try to import RAG components
+if core_dir not in sys.path:
+    sys.path.insert(0, core_dir)
+
+# Import the conversational RAG system
 try:
-    from config import get_openai_key, DATABASE_URL
-    from rag_chain import RAGChain
-    from utils import create_db_connection, test_db_connection
-    print("✅ Successfully imported RAG components")
+    from conversational_rag_system import SmartBeautyRAGSystem
+    RAG_AVAILABLE = True
+    print("✅ RAG system available")
 except ImportError as e:
-    print(f"⚠️  Warning: Could not import RAG components: {e}")
-    print("   API will use mock responses only")
+    print(f"❌ Could not import RAG system: {e}")
+    print("💡 Running in mock mode with fallback responses")
+    RAG_AVAILABLE = False
 
-app = Flask(__name__, static_folder='.', static_url_path='')
-CORS(app)  # Enable CORS for frontend communication
+# Load environment variables
+load_dotenv()
 
-class ChatbotAPI:
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Create Flask app
+app = Flask(__name__)
+CORS(app)  # Enable CORS for frontend integration
+
+# Global RAG system instance
+rag_system = None
+
+class ChatbotBackend:
+    """Backend handler for the SmartBeauty chatbot."""
+    
     def __init__(self):
-        self.rag_chain = None
-        self.use_rag = False
-        self.initialize_rag()
+        """Initialize the chatbot backend."""
+        self.rag_system = None
+        self.conversation_sessions = {}  # Store multiple conversation sessions
+        self.initialize_rag_system()
     
-    def initialize_rag(self):
-        """Initialize the RAG system"""
-        try:
-            # Test database connection
-            print("🔍 Testing database connection...")
-            conn = create_db_connection()
-            if conn:
-                test_result = test_db_connection(conn)
-                conn.close()
-                
-                if test_result:
-                    print("✅ Database connection successful")
-                    
-                    # Initialize RAG chain
-                    print("🔗 Initializing RAG chain...")
-                    self.rag_chain = RAGChain()
-                    self.use_rag = True
-                    print("✅ RAG system initialized successfully")
-                else:
-                    print("❌ Database connection test failed")
-            else:
-                print("❌ Could not establish database connection")
-                
-        except Exception as e:
-            print(f"❌ Error initializing RAG system: {e}")
-            print("   Falling back to mock responses")
-            traceback.print_exc()
-    
-    def get_rag_response(self, question):
-        """Get response from RAG system"""
-        if not self.use_rag or not self.rag_chain:
-            return self.get_mock_response(question)
+    def initialize_rag_system(self):
+        """Initialize the RAG system if available."""
+        if not RAG_AVAILABLE:
+            logger.warning("RAG system not available, using mock responses")
+            return
         
         try:
-            # Use the RAG chain to get response
-            print(f"🤖 Processing question: {question}")
+            logger.info("Initializing SmartBeauty RAG system...")
+            self.rag_system = SmartBeautyRAGSystem(collection_name="products")
             
-            # Call the RAG chain
-            response = self.rag_chain.answer_question(question)
-            
-            # Parse the response
-            if isinstance(response, dict):
-                answer = response.get('answer', 'I apologize, but I could not generate a response.')
-                sources = response.get('sources', [])
-                tokens = response.get('tokens', {})
+            # Check if system is properly initialized
+            stats = self.rag_system.get_stats()
+            if stats['initialized']:
+                logger.info("✅ RAG system initialized successfully")
+                logger.info(f"📊 System stats: {stats}")
             else:
-                answer = str(response)
-                sources = []
-                tokens = {}
+                logger.error("❌ RAG system initialization incomplete")
+                self.rag_system = None
+                
+        except Exception as e:
+            logger.error(f"❌ Error initializing RAG system: {e}")
+            logger.info("💡 Make sure embeddings have been created and database is accessible")
+            self.rag_system = None
+    
+    def get_response(self, message: str, session_id: str = "default") -> Dict[str, Any]:
+        """
+        Get a response to the user's message.
+        
+        Args:
+            message: User's message
+            session_id: Session identifier for conversation tracking
             
+        Returns:
+            Dictionary with response data matching frontend expectations
+        """
+        try:
+            if self.rag_system:
+                # Use the RAG system
+                response = self.rag_system.ask(message, use_memory=True)
+                
+                # Transform response to match frontend expectations
+                return {
+                    "answer": response.get("answer", ""),
+                    "sources": self._transform_sources(response.get("sources", [])),
+                    "tokens": response.get("tokens", {}),
+                    "using_memory": response.get("used_memory", True),
+                    "conversation_turn": response.get("conversation_turn", 1),
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                # Fallback to mock response
+                return self._get_mock_response(message)
+                
+        except Exception as e:
+            logger.error(f"Error getting response: {e}")
             return {
-                'answer': answer,
-                'sources': sources,
-                'tokens': tokens,
-                'timestamp': datetime.now().isoformat(),
-                'using_rag': True
+                "answer": "I'm sorry, I'm experiencing technical difficulties. Please try again.",
+                "sources": [],
+                "tokens": {},
+                "using_memory": False,                "error": str(e),
+                "timestamp": datetime.now().isoformat()
             }
+    
+    def _transform_sources(self, sources: list) -> list:
+        """Transform RAG sources to frontend format."""
+        transformed = []
+        for source in sources:
+            # The RAG system returns sources with content_preview and metadata
+            content = source.get("content_preview", "")
+            name = source.get("name", "Unknown Source")
+            doc_type = source.get("type", "product")
+            
+            # Estimate similarity score based on rank (higher rank = lower similarity)
+            rank = source.get("rank", 1)
+            estimated_similarity = max(0.95 - (rank - 1) * 0.1, 0.5)
+            
+            transformed.append({
+                "content": content,
+                "similarity": estimated_similarity,
+                "name": name,
+                "type": doc_type,
+                "rank": rank
+            })
+        return transformed
+    
+    def _get_mock_response(self, message: str) -> Dict[str, Any]:
+        """Generate a mock response when RAG system is not available."""
+        message_lower = message.lower()
+        
+        # Mock responses for common skincare topics
+        if any(keyword in message_lower for keyword in ['oily', 'acne', 'breakout']):
+            answer = "For oily and acne-prone skin, I'd recommend looking for products with salicylic acid or benzoyl peroxide. A gentle cleanser, non-comedogenic moisturizer, and targeted treatment would be a good start."
+            sources = [
+                {"content": "Salicylic acid helps unclog pores and reduce oil production", "similarity": 0.92},
+                {"content": "Non-comedogenic moisturizers won't clog pores", "similarity": 0.88}
+            ]
+        elif any(keyword in message_lower for keyword in ['dry', 'moisture', 'hydrat']):
+            answer = "For dry skin, focus on hydrating ingredients like hyaluronic acid, ceramides, and glycerin. Look for gentle, creamy cleansers and rich moisturizers."
+            sources = [
+                {"content": "Hyaluronic acid can hold up to 1000 times its weight in water", "similarity": 0.94},
+                {"content": "Ceramides help restore the skin barrier", "similarity": 0.89}
+            ]
+        elif any(keyword in message_lower for keyword in ['sensitive', 'irritat', 'red']):
+            answer = "For sensitive skin, choose fragrance-free, hypoallergenic products with soothing ingredients like niacinamide, aloe vera, or chamomile. Always patch test new products."
+            sources = [
+                {"content": "Niacinamide reduces inflammation and redness", "similarity": 0.91},
+                {"content": "Fragrance-free products reduce irritation risk", "similarity": 0.87}
+            ]
+        elif any(keyword in message_lower for keyword in ['aging', 'wrinkle', 'fine line']):
+            answer = "For anti-aging, consider retinoids, vitamin C, and peptides. Start with gentle formulations and always use sunscreen during the day."
+            sources = [
+                {"content": "Retinoids stimulate collagen production", "similarity": 0.93},
+                {"content": "Vitamin C provides antioxidant protection", "similarity": 0.90}
+            ]
+        else:
+            answer = "I'd be happy to help you with your skincare concerns! Please tell me more about your skin type and specific issues you'd like to address."
+            sources = [
+                {"content": "Personalized skincare advice based on individual needs", "similarity": 0.85}
+            ]
+        
+        return {
+            "answer": answer,
+            "sources": sources,
+            "tokens": {"input_tokens": len(message.split()) * 4 // 3, "output_tokens": len(answer.split()) * 4 // 3, "total_tokens": (len(message.split()) + len(answer.split())) * 4 // 3},
+            "using_memory": False,
+            "conversation_turn": 1,
+            "timestamp": datetime.now().isoformat(),
+            "mock_mode": True
+        }
+    
+    def reset_conversation(self, session_id: str = "default") -> Dict[str, Any]:
+        """Reset the conversation for a session."""
+        try:
+            if self.rag_system:
+                self.rag_system.clear_memory()
+                logger.info("✅ Conversation memory cleared")
+            
+            # Clear session data
+            if session_id in self.conversation_sessions:
+                del self.conversation_sessions[session_id]
+            
+            return {"status": "success", "message": "Conversation reset successfully"}
             
         except Exception as e:
-            print(f"❌ Error getting RAG response: {e}")
-            traceback.print_exc()
-            return self.get_mock_response(question)
+            logger.error(f"Error resetting conversation: {e}")
+            return {"status": "error", "message": str(e)}
     
-    def get_mock_response(self, question):
-        """Get mock response for testing"""
-        print(f"🎭 Using mock response for: {question}")
-        
-        # Mock responses based on keywords
-        mock_responses = {
-            'oily': {
-                'answer': "For oily skin, I recommend using a gentle foaming cleanser with salicylic acid, followed by a lightweight, oil-free moisturizer. Look for products containing niacinamide, which helps regulate oil production. The Ordinary Niacinamide 10% + Zinc 1% is excellent for controlling excess sebum.",
-                'sources': [
-                    {'content': "Salicylic acid helps unclog pores and reduce oil production", 'similarity': 0.89},
-                    {'content': "Niacinamide regulates sebum production and minimizes pores", 'similarity': 0.87}
-                ],
-                'tokens': {'prompt': 45, 'completion': 78}
-            },
-            'sensitive': {
-                'answer': "For sensitive skin that gets red easily, focus on gentle, fragrance-free products. Look for ingredients like ceramides, hyaluronic acid, and colloidal oatmeal. Avoid products with alcohol, strong fragrances, or harsh acids. CeraVe Gentle Foaming Cleanser and their PM Facial Moisturizing Lotion are great options.",
-                'sources': [
-                    {'content': "Ceramides help restore and maintain the skin barrier", 'similarity': 0.92},
-                    {'content': "Fragrance-free formulas reduce irritation risk", 'similarity': 0.85}
-                ],
-                'tokens': {'prompt': 52, 'completion': 89}
-            },
-            'aging': {
-                'answer': "For anti-aging and wrinkle prevention, incorporate retinoids, vitamin C, and peptides into your routine. Start with a gentle retinol like Neutrogena Rapid Wrinkle Repair, use vitamin C serum in the morning, and always apply SPF 30+ sunscreen. Hyaluronic acid helps plump fine lines.",
-                'sources': [
-                    {'content': "Retinoids boost collagen production and reduce fine lines", 'similarity': 0.94},
-                    {'content': "Vitamin C protects against environmental damage", 'similarity': 0.88}
-                ],
-                'tokens': {'prompt': 38, 'completion': 95}
-            },
-            'dry': {
-                'answer': "For very dry skin, use a cream-based cleanser and rich moisturizers with ceramides, glycerin, and hyaluronic acid. Apply moisturizer to damp skin to lock in hydration. Consider adding a facial oil like argan or jojoba oil. Avoid hot water and harsh cleansers that strip natural oils.",
-                'sources': [
-                    {'content': "Ceramides and glycerin provide long-lasting hydration", 'similarity': 0.91},
-                    {'content': "Applying moisturizer to damp skin increases effectiveness", 'similarity': 0.86}
-                ],
-                'tokens': {'prompt': 41, 'completion': 82}
-            }
+    def get_health_status(self) -> Dict[str, Any]:
+        """Get the health status of the backend."""
+        status = {
+            "status": "healthy",
+            "rag_system_available": self.rag_system is not None,
+            "timestamp": datetime.now().isoformat()
         }
         
-        # Simple keyword matching
-        question_lower = question.lower()
+        if self.rag_system:
+            try:
+                stats = self.rag_system.get_stats()
+                status["rag_stats"] = stats
+            except Exception as e:
+                status["rag_error"] = str(e)
+                status["status"] = "degraded"
         
-        if 'oily' in question_lower:
-            response = mock_responses['oily']
-        elif any(word in question_lower for word in ['sensitive', 'red', 'irritat']):
-            response = mock_responses['sensitive']
-        elif any(word in question_lower for word in ['aging', 'wrinkle', 'anti-aging']):
-            response = mock_responses['aging']
-        elif 'dry' in question_lower:
-            response = mock_responses['dry']
-        else:
-            # Default response
-            response = {
-                'answer': "I'd be happy to help you with your skincare concerns! Could you tell me more about your specific skin type or the issues you're experiencing? For example, do you have oily, dry, sensitive, or combination skin?",
-                'sources': [],
-                'tokens': {'prompt': 25, 'completion': 45}
-            }
-        
-        response['timestamp'] = datetime.now().isoformat()
-        response['using_rag'] = False
-        return response
+        return status
 
-# Initialize the API
-chatbot_api = ChatbotAPI()
+# Initialize the chatbot backend
+chatbot = ChatbotBackend()
 
+# Routes
 @app.route('/')
-def serve_ui():
-    """Serve the chatbot UI"""
+def index():
+    """Serve the main chatbot interface."""
     try:
-        ui_path = os.path.join(os.path.dirname(__file__), 'index.html')
-        with open(ui_path, 'r', encoding='utf-8') as f:
-            return f.read()
+        return send_from_directory('.', 'index.html')
     except Exception as e:
-        return f"Error loading UI: {e}", 500
+        logger.error(f"Error serving index.html: {e}")
+        return f"Error loading chatbot interface: {e}", 500
+
+@app.route('/<path:filename>')
+def static_files(filename):
+    """Serve static files (CSS, JS, etc.)."""
+    try:
+        return send_from_directory('.', filename)
+    except Exception as e:
+        logger.error(f"Error serving static file {filename}: {e}")
+        return f"File not found: {filename}", 404
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """Handle chat messages"""
+    """Handle chat messages from the frontend."""
     try:
         data = request.get_json()
         
         if not data or 'message' not in data:
-            return jsonify({'error': 'No message provided'}), 400
+            return jsonify({"error": "Message is required"}), 400
         
-        question = data['message'].strip()
+        message = data['message'].strip()
+        if not message:
+            return jsonify({"error": "Message cannot be empty"}), 400
         
-        if not question:
-            return jsonify({'error': 'Empty message'}), 400
+        # Get session ID from request or use default
+        session_id = data.get('session_id', 'default')
         
-        # Get response from RAG system or mock
-        response = chatbot_api.get_rag_response(question)
+        # Get response from chatbot
+        response = chatbot.get_response(message, session_id)
         
-        # Log the interaction
-        print(f"📝 Question: {question}")
-        print(f"🤖 Response: {response['answer'][:100]}...")
+        logger.info(f"Chat request processed - Message: '{message[:50]}...' - Response length: {len(response.get('answer', ''))}")
         
         return jsonify(response)
         
     except Exception as e:
-        print(f"❌ Error in chat endpoint: {e}")
-        traceback.print_exc()
+        logger.error(f"Error in chat endpoint: {e}")
         return jsonify({
-            'error': 'Internal server error',
-            'answer': "I'm sorry, I'm experiencing technical difficulties. Please try again later.",
-            'sources': [],
-            'tokens': {},
-            'timestamp': datetime.now().isoformat(),
-            'using_rag': False
+            "error": "Internal server error",
+            "answer": "I'm sorry, I'm experiencing technical difficulties. Please try again.",
+            "sources": [],
+            "tokens": {},
+            "using_memory": False
         }), 500
 
 @app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'rag_available': chatbot_api.use_rag,
-        'timestamp': datetime.now().isoformat()
-    })
+def health():
+    """Health check endpoint."""
+    try:
+        status = chatbot.get_health_status()
+        return jsonify(status)
+    except Exception as e:
+        logger.error(f"Error in health endpoint: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/reset', methods=['POST'])
-def reset_conversation():
-    """Reset conversation (placeholder for future session management)"""
-    return jsonify({
-        'status': 'conversation_reset',
-        'timestamp': datetime.now().isoformat()
-    })
+def reset():
+    """Reset conversation endpoint."""
+    try:
+        data = request.get_json() or {}
+        session_id = data.get('session_id', 'default')
+        
+        result = chatbot.reset_conversation(session_id)
+        logger.info(f"Conversation reset for session: {session_id}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in reset endpoint: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+@app.route('/api/stats', methods=['GET'])
+def stats():
+    """Get system statistics."""
+    try:
+        if chatbot.rag_system:
+            stats = chatbot.rag_system.get_stats()
+            return jsonify(stats)
+        else:
+            return jsonify({
+                "error": "RAG system not available",
+                "mock_mode": True
+            })
+    except Exception as e:
+        logger.error(f"Error in stats endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    """Handle 404 errors."""
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle 500 errors."""
+    logger.error(f"Internal server error: {error}")
+    return jsonify({"error": "Internal server error"}), 500
+
+def main():
+    """Main entry point for the Flask app."""
+    # Configuration
+    host = os.getenv('FLASK_HOST', '127.0.0.1')
+    port = int(os.getenv('FLASK_PORT', 5000))
+    debug = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    logger.info(f"🚀 Starting SmartBeauty AI Chatbot Backend")
+    logger.info(f"📡 Server: http://{host}:{port}")
+    logger.info(f"🔧 Debug mode: {debug}")
+    logger.info(f"🤖 RAG system available: {RAG_AVAILABLE}")
+    
+    if not RAG_AVAILABLE:
+        logger.warning("⚠️  Running in mock mode - some features may be limited")
+        logger.info("💡 To enable full functionality, ensure the RAG system dependencies are installed")
+    
+    try:
+        app.run(host=host, port=port, debug=debug)
+    except KeyboardInterrupt:
+        logger.info("👋 Shutting down chatbot backend")
+    except Exception as e:
+        logger.error(f"❌ Error starting server: {e}")
 
 if __name__ == '__main__':
-    print("🚀 Starting SmartBeauty AI Chatbot API...")
-    print(f"💡 RAG System Available: {chatbot_api.use_rag}")
-    print("🌐 Open http://localhost:5000 to access the chatbot")
-    print("📡 API endpoints available at /api/chat, /api/health, /api/reset")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    main()

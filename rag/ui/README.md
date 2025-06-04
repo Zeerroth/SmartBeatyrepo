@@ -1,6 +1,6 @@
 # SmartBeauty AI Chatbot UI
 
-A modern, responsive web interface for the SmartBeauty AI skincare recommendation system.
+A modern, responsive web interface for the SmartBeauty AI skincare advisor powered by the conversational RAG system.
 
 ## Features
 
@@ -11,7 +11,9 @@ A modern, responsive web interface for the SmartBeauty AI skincare recommendatio
 - ⚡ **Quick Suggestions**: Pre-built questions for common skincare concerns
 - 🔍 **Source Attribution**: Shows similarity scores and source documents
 - 📊 **Token Counting**: Displays LLM token usage information
-- 🌐 **API Integration**: Connects to backend RAG system with fallback support
+- 🌐 **Flask Backend**: Direct integration with conversational RAG system
+- 🧠 **Memory**: Maintains conversation context across multiple turns
+- 🎯 **Smart Responses**: Powered by the full conversational RAG system
 
 ## Quick Start
 
@@ -21,11 +23,22 @@ A modern, responsive web interface for the SmartBeauty AI skincare recommendatio
 # Navigate to the ui folder
 cd "c:\Projects\Personal Projects\ML\SmartBeauty\LLM\rag\ui"
 
-# Run the startup script
-start_chatbot.bat
+# Run the Flask backend startup script
+start_backend.bat
 ```
 
-### Option 2: Manual Start
+### Option 2: Use the Startup Script (Linux/Mac)
+
+```bash
+# Navigate to the ui folder
+cd "c:\Projects\Personal Projects\ML\SmartBeauty\LLM\rag\ui"
+
+# Make the script executable and run it
+chmod +x start_backend.sh
+./start_backend.sh
+```
+
+### Option 3: Manual Start
 
 ```bash
 # Navigate to the ui folder
@@ -34,18 +47,275 @@ cd "c:\Projects\Personal Projects\ML\SmartBeauty\LLM\rag\ui"
 # Install dependencies (if not already installed)
 pip install -r requirements.txt
 
-# Start the server
+# Start the Flask backend
 python app.py
 ```
 
-### Option 3: Direct File Access
-
-If you prefer to use the frontend without the backend:
-
-1. Open `index.html` directly in your browser
-2. The chatbot will use mock responses for testing
-
 ## Usage
+
+1. **Start the Backend**: Use one of the methods above to start the Flask backend server
+2. **Open Browser**: Navigate to `http://127.0.0.1:5000`
+3. **Start Chatting**: Type your skincare questions or use the quick suggestion chips
+4. **View Sources**: See the source documents and similarity scores for each response
+5. **Reset Conversation**: Use the reset button to start fresh and clear memory
+
+## File Structure
+
+```
+ui/
+├── index.html          # Main HTML interface
+├── style.css           # CSS styling (classic design)
+├── script.js           # JavaScript functionality
+├── app.py              # Flask backend with RAG integration
+├── requirements.txt    # Python dependencies
+├── start_backend.bat   # Windows startup script
+├── start_backend.sh    # Linux/Mac startup script
+├── test_backend.py     # Backend testing script
+└── README.md          # This file
+```
+
+## API Endpoints
+
+The Flask backend provides the following endpoints:
+
+- `GET /` - Serves the chatbot UI (index.html)
+- `GET /<filename>` - Serves static files (CSS, JS, etc.)
+- `POST /api/chat` - Handles chat messages and returns AI responses
+- `GET /api/health` - Health check endpoint with system status
+- `POST /api/reset` - Reset conversation memory
+- `GET /api/stats` - Get RAG system statistics
+
+### API Request/Response Format
+
+#### Chat Request
+```json
+{
+  "message": "What products do you recommend for oily skin?",
+  "session_id": "optional_session_id"
+}
+```
+
+#### Chat Response
+```json
+{
+  "answer": "For oily skin, I'd recommend...",
+  "sources": [
+    {
+      "content": "Source document content...",
+      "similarity": 0.92,
+      "name": "Product Name",
+      "type": "product",
+      "rank": 1
+    }
+  ],
+  "tokens": {
+    "input_tokens": 15,
+    "output_tokens": 85,
+    "total_tokens": 100
+  },
+  "using_memory": true,
+  "conversation_turn": 2,
+  "timestamp": "2025-06-04T10:30:00"
+}
+```
+
+## Backend Integration
+
+### RAG System Integration
+
+The Flask backend directly integrates with the conversational RAG system:
+
+- **Direct Import**: Imports `SmartBeautyRAGSystem` from the core module
+- **Memory Management**: Maintains conversation context using LangChain memory
+- **Source Attribution**: Returns actual source documents with similarity scores
+- **Token Counting**: Accurate token counting using tiktoken
+- **Error Handling**: Graceful fallback to mock responses if RAG system fails
+
+### Fallback Mode
+
+If the RAG system is unavailable (missing dependencies, database issues, etc.):
+
+- Automatically switches to mock response mode
+- Provides keyword-based responses for common skincare topics
+- Shows clear indicators when in fallback mode
+- Maintains UI functionality for testing and development
+
+## Features in Detail
+
+### Chat Interface
+
+- **Message Types**: User and bot messages with distinct styling
+- **Timestamps**: All messages include time information
+- **Character Counter**: Input field shows character count (500 max)
+- **Send Button**: Automatically enables/disables based on input
+- **Auto-resize**: Input textarea expands with content
+
+### Source Documents
+
+- **Similarity Scores**: Shows how relevant each source is (0-100%)
+- **Source Content**: Displays the actual text that informed the response
+- **Source Names**: Product or condition names from the database
+- **Ranking**: Sources ordered by relevance
+
+### Token Information
+
+- **Input/Output Split**: Shows tokens used for prompt vs completion
+- **Total Count**: Combined token usage for the conversation turn
+- **Real-time Tracking**: Updated with each API response
+
+### Memory & Context
+
+- **Conversational Memory**: Remembers previous questions and answers
+- **Turn Tracking**: Shows current conversation turn number
+- **Memory Indicators**: Visual feedback when using conversation memory
+- **Memory Reset**: Clear conversation history and start fresh
+
+### Quick Suggestions
+
+Pre-built questions to get users started:
+
+- **Oily Skin**: "What products do you recommend for oily skin?"
+- **Sensitive Skin**: "I have sensitive skin that gets red easily. What can help?"
+- **Anti-Aging**: "What are good anti-aging products for wrinkles?"
+- **Dry Skin**: "My skin is very dry. What moisturizing products would help?"
+
+## Configuration
+
+### Environment Variables
+
+The backend respects these environment variables:
+
+- `FLASK_HOST`: Server host (default: 127.0.0.1)
+- `FLASK_PORT`: Server port (default: 5000)
+- `FLASK_DEBUG`: Debug mode (default: False)
+- `FLASK_ENV`: Environment (default: development)
+
+### RAG System Configuration
+
+The backend uses the same configuration as the core RAG system:
+
+- Database connection from `core/config.py`
+- OpenAI API key from environment variables
+- Embedding model settings
+- Collection name (default: "products")
+
+## Troubleshooting
+
+### Common Issues
+
+1. **"Module not found" errors**
+   ```bash
+   # Solution: Ensure you're in the ui directory and install dependencies
+   cd "c:\Projects\Personal Projects\ML\SmartBeauty\LLM\rag\ui"
+   pip install -r requirements.txt
+   ```
+
+2. **RAG system import errors**
+   ```bash
+   # Solution: Check if core dependencies are installed
+   cd ../core
+   pip install -r requirements.txt
+   ```
+
+3. **Database connection failures**
+   - Check PostgreSQL is running
+   - Verify database credentials in `core/.env`
+   - Backend will automatically fall back to mock responses
+
+4. **OpenAI API errors**
+   - Check API key in `core/.env`
+   - Verify internet connection
+   - Backend will show clear error messages
+
+5. **Port already in use**
+   ```bash
+   # Solution: Use a different port
+   set FLASK_PORT=5001
+   python app.py
+   ```
+
+### Debug Information
+
+The Flask backend provides extensive logging:
+
+- Startup information with configuration details
+- Request/response logging for API calls
+- Error messages with stack traces in debug mode
+- RAG system initialization status
+
+### Health Check
+
+Use the health endpoint to check system status:
+
+```bash
+curl http://127.0.0.1:5000/api/health
+```
+
+Response includes:
+- Backend status
+- RAG system availability
+- System statistics (if available)
+- Error information (if any)
+
+## Development
+
+### Backend Development
+
+To modify the Flask backend (`app.py`):
+
+1. **Add new endpoints**: Follow the existing pattern with error handling
+2. **Modify RAG integration**: Update the `ChatbotBackend` class
+3. **Change response format**: Update `_transform_sources()` method
+4. **Add new features**: Extend the API with additional functionality
+
+### Frontend Development
+
+To modify the chat interface:
+
+1. **HTML changes**: Edit `index.html` for structure
+2. **Styling changes**: Edit `style.css` for appearance
+3. **JavaScript changes**: Edit `script.js` for functionality
+4. **API integration**: Update fetch calls to match backend endpoints
+
+### Testing
+
+Use the included test script:
+
+```bash
+python test_backend.py
+```
+
+This tests:
+- Import functionality
+- Mock response generation
+- Basic Flask app creation
+- Error handling
+
+## Browser Compatibility
+
+- ✅ Chrome 90+
+- ✅ Firefox 88+
+- ✅ Safari 14+
+- ✅ Edge 90+
+
+## Performance
+
+- **Fast Loading**: Minimal dependencies and optimized assets
+- **Smooth Animations**: Hardware-accelerated CSS transitions
+- **Efficient Backend**: Direct RAG system integration
+- **Memory Management**: Automatic conversation cleanup
+- **Caching**: Static file serving with appropriate headers
+
+## Security Considerations
+
+- **Input Validation**: All user inputs are validated and sanitized
+- **Error Handling**: No sensitive information leaked in error messages
+- **CORS**: Configured for local development (adjust for production)
+- **Session Management**: Basic session isolation by session ID
+
+---
+
+For issues or questions about the chatbot UI, please check the main project README or create an issue in the repository.
 
 1. **Start the Server**: Use one of the methods above to start the backend server
 2. **Open Browser**: Navigate to `http://localhost:5000`

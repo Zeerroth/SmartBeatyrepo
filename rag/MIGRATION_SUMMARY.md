@@ -9,16 +9,19 @@ We have successfully migrated from the generic `PGVectorStoreManager` to the spe
 ### **Key Benefits of New Architecture:**
 
 1. **📊 Database-Aware Integration**
+
    - Directly reads from simplified `products` and `skin_conditions` tables
    - Automatically converts database rows to optimized embedding documents
    - Stores embeddings in LangChain-compatible format
 
 2. **🔄 Smart Duplicate Management**
+
    - Only processes new items unless `--rebuild` flag is used
    - Tracks existing embeddings by source metadata
    - Supports incremental updates efficiently
 
 3. **📈 Rich Metadata & Filtering**
+
    - Stores structured metadata for products (id, name, price, etc.)
    - Enables filtering by document type (product vs skin_condition)
    - Maintains traceability to source database records
@@ -31,6 +34,7 @@ We have successfully migrated from the generic `PGVectorStoreManager` to the spe
 ## **📁 Current File Status:**
 
 ### **✅ Updated Files:**
+
 - `create_embeddings.py` - Uses CustomDatabaseVectorManager
 - `custom_vector_store.py` - Core vector store logic
 - `test_rag_inference.py` - Updated to use LangChain PGVector directly
@@ -38,11 +42,13 @@ We have successfully migrated from the generic `PGVectorStoreManager` to the spe
 - `vector_store_helper.py` - NEW: Helper functions for easy vector store access
 
 ### **📦 Deprecated Files:**
+
 - `vector_store.py` - Old generic wrapper (can be removed)
 
 ## **🔧 Usage Pattern:**
 
 ### **For Embedding Creation:**
+
 ```bash
 # Create embeddings for both products and skin conditions
 python create_embeddings.py
@@ -55,6 +61,7 @@ python create_embeddings.py --products-only
 ```
 
 ### **For Inference/Retrieval:**
+
 ```python
 # Use the new helper functions
 from vector_store_helper import load_products_vector_store, create_embedding_model
@@ -66,15 +73,18 @@ retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 ```
 
 ### **For API Integration:**
+
 The `integrate_api_with_rag.py` now connects directly to existing LangChain vector stores, eliminating the need for document recreation.
 
 ## **🗃️ Database Architecture:**
 
 ### **Source Tables (Simplified):**
+
 - `products` (id, name, description)
 - `skin_conditions` (id, name, description)
 
 ### **LangChain Embedding Tables:**
+
 - `langchain_pg_collection` - Collection metadata
 - `langchain_pg_embedding` - Actual embeddings with rich metadata
 

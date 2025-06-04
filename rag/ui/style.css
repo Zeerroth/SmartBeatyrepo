@@ -485,6 +485,22 @@ body {
   text-align: right;
 }
 
+.memory-info {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #10a37f;
+  text-align: right;
+  font-weight: 500;
+}
+
+.turn-info {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: #6b7280;
+  text-align: right;
+  font-style: italic;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   body {
